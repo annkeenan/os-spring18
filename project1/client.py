@@ -2,13 +2,11 @@
 import sys
 import zmq
 
-PORT = '6000'
-
 # create socket and connect to server
 context = zmq.Context()
 socket = context.socket(zmq.SUB)
 print('Receiving updates from message sending server...')
-socket.connect('tcp://localhost:%s' % PORT)
+socket.connect('tcp://localhost:6000')
 
 # receive/print in messages in a continous loop
 while True:
