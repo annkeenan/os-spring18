@@ -16,8 +16,9 @@ zmq::socket_t socket(context, ZMQ_PUB);
 
 // Cleanup the ZMQ Socket
 void cleanup() {
-	socket.close();
-	context.close();
+	if (!zmq_close(&socket) || !zmq_term(&context)) {
+		std::cout << "Error: cleanup failed" << std::endl;
+	}
 }
 
 // Handler for SIGINT
@@ -99,7 +100,7 @@ int main(int argc, char *argv[]) {
 
 			// Try to read the file
 			std::ifstream f(filename);
-			char message[120]; // store the message to be sent
+			char message[120] = "\0"; // store the message to be sent
 			int numChar = 0; // number of characters in file
 
 			// Open the file and read contents
@@ -107,7 +108,7 @@ int main(int argc, char *argv[]) {
 			bool invalidInput = false;
 			while (f.get(c) && numChar < 120) {  // Read 120 characters maximum
 				// Check if the character is ASCII readable
-				if (int(c) >= 32 && int(c) <= 126) {
+				if ((int(c) >= 32 && int(c) <= 126) || c == '\n') {
 					message[numChar++] = c;
 				} else {
 					invalidInput = true;
@@ -125,6 +126,9 @@ int main(int argc, char *argv[]) {
 			if (numChar > 120) {
 				std::cout << "Error: The file length exceeds 120 characters" << std::endl;
 				continue;
+			} else if (numChar == 0) {
+				std::cout << "Error: The file is empty" << std::endl;
+				continue;
 			}
 
 			// Confirm message to be sent
@@ -136,11 +140,11 @@ int main(int argc, char *argv[]) {
 
 			if (confirm.compare("YES") == 0) {
 				// Send message to the client
-        zmq::message_t reply(numChar);
-        memcpy(reply.data(), message, numChar);
+        zmq::message_t output(numChar);
+        memcpy(output.data(), message, numChar);
 
 				// ZMQ sending mechanism
-        if (socket.send(reply)) {
+        if (socket.send(output)) {
 					std::cout << "Message sent!" << std::endl;
 					continue;
 				}
