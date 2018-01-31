@@ -1,3 +1,5 @@
+// Server.cpp
+// Ann Keenan (akeenan2)
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,17 +14,30 @@
 zmq::context_t context(1);
 zmq::socket_t socket(context, ZMQ_PUB);
 
+// Cleanup the ZMQ Socket
+void cleanup() {
+	socket.close();
+	context.close();
+}
+
 // Handler for SIGINT
 void sigintHandler(int signum) {
-	std::cout << "Thanks for using MP-MBS! Exiting..." << std::endl;
-	//zmq_close(socket);
-	//zmq_ctx_destroy(context);
+	std::cout << "Thanks for using! Exiting..." << std::endl;
+	cleanup();
 	exit(signum);
+}
+
+// Check if the input is a positive integer
+bool isValid(const std::string & s) {
+	if (s.empty() || (!isdigit(s[0]) && s[0] == '-')) return false;
+	char *p;
+	strtol(s.c_str(), &p, 10);
+	return (*p == 0);
 }
 
 // Display help message
 void helpMessage() {
-  std::cout << "The commands for MP-MBS are as follows:" << std::endl
+  std::cout << "The commands are as follows:" << std::endl
             << "  help        This command" << std::endl
             << "  send XXX    Send the file XXX out to all subscribed clients" << std::endl
             << "  quit        Exit this code" << std::endl;
@@ -32,15 +47,22 @@ int main(int argc, char *argv[]) {
 	// Catch Control-C via the signal handler
 	signal(SIGINT, sigintHandler);
 
-	// Check if input is correct
+	// Check if port was specified
   if (argc != 2) {
     std::cout << "Error: Unable to launch - port not specified!" << std::endl
               << "Proper Usage:  ./project1   XXXX   where XXXX is the port number"
               << std::endl;
 		return 1;
   }
+	std::cout << "Welcome! Type 'help' for a list of possible commands." << std::endl;
 
-	// Bind the socket
+	// Check if port is an integer
+	if (!isValid(argv[1])) {
+		std::cout << "Error: Invalid port number " << argv[1] << std::endl;
+		return 1;
+	}
+
+	// Build address and bind the socket
 	std::string address = "tcp://*:";
 	address += argv[1];
 	socket.bind(address.c_str());
@@ -57,11 +79,11 @@ int main(int argc, char *argv[]) {
 		// Parse what the user typed
 		if (input.compare("help") == 0) {
 			helpMessage();
-			continue;
+			continue;  // Loop again
 		} else if (input.compare("quit") == 0) {
-			break;
+			break;  // Exit the loop
 		} else if (input.compare("send") == 0){
-			// Input the file name
+			// User input of the file name
 			std::string filename;
 			std::cin >> filename;
 
@@ -82,14 +104,21 @@ int main(int argc, char *argv[]) {
 
 			// Open the file and read contents
 			char c;
-			while (f.get(c) && numChar < 120) {
+			bool invalidInput = false;
+			while (f.get(c) && numChar < 120) {  // Read 120 characters maximum
 				// Check if the character is ASCII readable
 				if (int(c) >= 32 && int(c) <= 126) {
 					message[numChar++] = c;
 				} else {
-					std::cout << "Error: The file contains non-ASCII readable text" << std::endl;
+					invalidInput = true;
 					break;
 				}
+			}
+
+			// Check if all characters were ASCII readable
+			if (invalidInput) {
+				std::cout << "Error: The file contains non-ASCII readable text" << std::endl;
+				continue;
 			}
 
 			// Handle files that are too long
@@ -106,23 +135,25 @@ int main(int argc, char *argv[]) {
 			std::cin >> confirm;
 
 			if (confirm.compare("YES") == 0) {
-				// ZMQ sending mechanism
-				std::cout << "Message sent!" << std::endl;
-
 				// Send message to the client
         zmq::message_t reply(numChar);
         memcpy(reply.data(), message, numChar);
-        socket.send(reply);
-			} else {
-				std::cout << "Message not sent." << std::endl;
+
+				// ZMQ sending mechanism
+        if (socket.send(reply)) {
+					std::cout << "Message sent!" << std::endl;
+					continue;
+				}
 			}
+
+			// If sending not confirmed, or message failure
+			std::cout << "Message not sent." << std::endl;
 		} else {
 			std::cout << "Invalid command. Type help for a list of valid commands." << std::endl;
 		}
 	}
 
 	std::cout << "Thanks for using MP-MBS! Exiting..." << std::endl;
-	//zmq_close(socket);
-	//zmq_ctx_destroy(context);
+	cleanup();
 	return 0;
 }
