@@ -16,6 +16,7 @@ zmq::socket_t socket(context, ZMQ_PUB);
 
 // Cleanup the ZMQ Socket
 void cleanup() {
+	// Call the functions called by the destructors of the socket/context
 	if (!zmq_close(&socket) || !zmq_term(&context)) {
 		std::cout << "Error: cleanup failed" << std::endl;
 	}
