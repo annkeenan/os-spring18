@@ -23,38 +23,54 @@
 #define MAXBUF 128
 
 int LEVEL = 1;
-int PORT = 6000;
+std::string PORT = "6500";
 
 std::map<int, std::string> processes;
+
+// Set up the ZMQ Socket
+zmq::context_t context(1);
+zmq::socket_t socket(context, ZMQ_REP);
+std::string message;  // return message
 
 // Return pid of completed process
 int waitProcesses() {
 	int status, wpid;
+
 	// Loop through list of started child processes
 	for (std::map<int, std::string>::iterator p = processes.begin(); p != processes.end(); ++p) {
+		// Check if the process is already completed
+		if (p->second == "Terminated" || p->second == "Completed") {
+			continue;
+		}
+
 		wpid = waitpid(p->first, &status, WNOHANG);
 		if (wpid == 0) {  // process not complete
 			continue;
 		} else {
 			if (wpid == -1) {  // error
 				std::cout << "Error: Failure waiting for process " << p->first << std::endl;
+				break;
 			} else if (wpid != 0) {  // success in waiting
 				std::cout << "DEBUG: Process " << p->first << " completed" << std::endl;
+				p->second = "Completed";
 			}
 			return p->first;
 		}
 	}
+
+	// Return error code
 	return -1;
 }
 
 void sigintHandler(int signum) {
 	std::cout << "Exiting..." << std::endl;
+
 	// Clean up all started child processes
-	int pid;
-	while (!processes.empty()) {
-		if ((pid = waitProcesses()) != -1) {
-			processes.erase(pid);
-		}
+	wait(NULL);
+
+	// Call the functions called by the destructors of the socket/context
+	if (!zmq_close(&socket) || !zmq_term(&context)) {
+		std::cout << "Error: cleanup failed" << std::endl;
 	}
 	_exit(signum);
 }
@@ -86,45 +102,54 @@ int handleSignal(int pid, std::string sig) {
 	std::string oldStatus;
 	oldStatus = p->second;
 
-	if (sig == "SIGHUP") {
+	if (sig == "SIGHUP") {  // hangup
 		signum = SIGHUP;
+		p->second = "Terminated";
+	} else if (sig == "SIGALRM") {  // terminate when timer expires
+		signum = SIGALRM;
 		p->second = "Terminated";
 	} else if (sig == "SIGINT") {
 		signum = SIGINT;
 		p->second = "Terminated";
-	} else if (sig == "SIGQUIT") {
+	} else if (sig == "SIGQUIT") {  // quit and dump core
 		signum = SIGQUIT;
 		p->second = "Terminated";
-	} else if (sig == "SIGSTOP") {
+	} else if (sig =="SIGTERM") {  // terminate gracefully
+		signum = SIGTERM;
+		p->second = "Terminated";
+	} else if (sig == "SIGKILL") {  // terminate immediately
+		signum = SIGKILL;
+		p->second = "Terminated";
+	} else if (sig == "SIGSTOP") {  // stop running
 		if (p->second == "stopped") {
 			std::cout << "Process " << pid << " already stopped" << std::endl;
 			return 1;
 		}
 		signum = SIGSTOP;
 		p->second = "Stopped";
-	} else if (sig == "SIGALRM") {
-		signum = SIGALRM;
-		p->second = "Stopped";
 	} else if (sig == "SIGCONT") {
 		if (p->second == "Running") {
-			std::cout << "Process " << pid << " already running" << std::endl;
+			message = "Process " + std::to_string(pid) + " already running\n";
+			std::cout << message;
 			return 1;
 		}
 		p->second = "Running";
 		signum = SIGCONT;
 	} else {
-		std::cout << "Error: Signal " << sig << " is not supported" << std::endl;
+		message = "Error: Signal " + sig + " is not supported\n";
+		std::cout << message;
 		return 1;  // unsupported signal
 	}
 
 	if (!sendSignal(pid, signum)) {
-		std::cout << "Error: Failure to send signal " << sig << " on process " << pid << std::endl;
+		message = "Error: Failure to send signal " + sig + " on process " + std::to_string(pid) + "\n";
+		std::cout << message;
 		p->second = oldStatus;
 		return -1;
 	} else {
 		if (p->second.compare("terminated") == 0) {
 			std::cout << "DEBUG: Process " << p->first << " terminated" << std::endl;
-			processes.erase(p);
+			// processes.erase(p);
 		}
 		return 0;
 	}
@@ -146,13 +171,14 @@ int exec(std::string command) {
   if (pid == -1) {
 		std::cout << "Error: Failure to fork" << std::endl;
   } else if (pid > 0) {
-		std::cout << "Process " << pid << " started in background" << std::endl;
+		message = "Process " + std::to_string(pid) + " started in background\n";
+		std::cout << message;
 		processes.insert(std::pair<int, std::string>{pid, "Running"});
   } else {
     execvp(args.data()[0], args.data());
-		std::cout << "Error: Failure starting command " << command << std::endl;
-    return 1;
-		// _exit(EXIT_FAILURE);
+		std::cout << "Error: Failure starting command" << command << std::endl;
+		return 1;
+    // _exit(EXIT_FAILURE);
   }
 	return 0;
 }
@@ -180,13 +206,33 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+	if (LEVEL == 1) {
+		std::cout << "Welcome to irish." << std::endl;
+	} else {
+		std::string addr;
+		addr = "tcp://*:" + PORT;
+		socket.bind(addr);
+		std::cout << "Starting irish server on port " << PORT << "..." << std::endl;
+	}
+
 	// Main loop
 	while (1) {
 		// Prompt for user input
-		std::string input;
+		std::string input, rpl;
 
-		std::cout << "> ";
-		std::cin >> input;
+		if (LEVEL == 1) {
+			std::cout << "> ";
+			std::cin >> input;
+		} else {
+			zmq::message_t reply;
+			socket.recv(&reply);
+			rpl = std::string(static_cast<char*>(reply.data()), reply.size());
+			int index = rpl.find(" ");
+			input = rpl.substr(0, index);
+			rpl = rpl.substr(index + 1, rpl.length() - index);
+			std::cout << "> " << input << std::endl;
+			std::cout << rpl << std::endl;
+		}
 
 		// Wait and cleanup any completed processes
 		int pid;
@@ -198,25 +244,35 @@ int main(int argc, char *argv[]) {
 		if (input.compare("bg") == 0) {
 			std::string line;
 
-			std::getline(std::cin, line);
+			if (LEVEL == 1) {
+		  	std::getline(std::cin, line);
+			} else {
+				line = rpl;
+			}
 
 			// Execute the command
 			exec(line);
 		} else if (input.compare("list") == 0) {
 			if (processes.empty()) {
-				std::cout << "No subprocesses." << std::endl;
+				message = "No subprocesses.\n";
 			} else {
-				std::cout << processes.size() << "Background Process(es)." << std::endl;
+				message = std::to_string(processes.size()) + " Background Process(es).\n";
 				int n = 1;
 				for (std::map<int, std::string>::iterator p=processes.begin(); p!=processes.end(); ++p) {
-	        std::cout << "(" << n++ << ")" << " PID=" << p->first << " State=" << p->second << std::endl;
+	        message += "(" + std::to_string(n) + ") PID=" + std::to_string(p->first) + " State=" + p->second + "\n";
+					n++;
 				}
 			}
+			std::cout << message;
 
 		// Bring process to foreground and wait to complete
 		} else if (input.compare("fg") == 0) {
 			int pid, status, wpid;
-	  	std::cin >> pid;
+			if (LEVEL == 1) {
+		  	std::cin >> pid;
+			} else {
+				pid = std::stoi(rpl);
+			}
 			std::map<int, std::string>::iterator p;
 
 			// Process is either completed or does not exist
@@ -224,16 +280,19 @@ int main(int argc, char *argv[]) {
 				std::cout << "Error: Process " << pid << " does not exist" << std::endl;
 				continue;
 			} else if (p->second == "Completed") {
-				std::cout << "Process " << pid << " completed" << std::endl;
-				processes.erase(p);
+				message = "Process " + std::to_string(pid) + " completed\n";
+				std::cout << message;
+				// processes.erase(p);
 				continue;
 			} else if (p->second == "Stopped") {
-				std::cout << "Process " << pid << " stopped" << std::endl;
-				processes.erase(p);
+				message = "Process " + std::to_string(pid) + " stopped\n";
+				std::cout << message;
+				// processes.erase(p);
 				continue;
 			} else if (p->second == "Terminated") {
-				std::cout << "Process " << pid << " terminated" << std::endl;
-				processes.erase(p);
+				message = "Process " + std::to_string(pid) + " terminated\n";
+				std::cout << message;
+				// processes.erase(p);
 				continue;
 			}
 
@@ -249,52 +308,82 @@ int main(int argc, char *argv[]) {
 		} else if (input.compare("signal") == 0) {
 			int pid;
 			std::string sig;
-			std::cin >> pid >> sig;
+			if (LEVEL == 1) {
+		  	std::cin >> pid >> sig;
+			} else {
+				int index = rpl.find(" ");
+				pid = std::stoi(rpl.substr(0, index));
+				sig = rpl.substr(index + 1, rpl.length() - index);
+			}
 			handleSignal(pid, sig);
 
 		// Stop a process
 		} else if (input.compare("stop") == 0) {
 			int pid;
-			std::cin >> pid;
+			if (LEVEL == 1) {
+		  	std::cin >> pid;
+			} else {
+				pid = std::stoi(rpl);
+			}
+
 			if (sendSignal(pid, SIGSTOP)) {
 				processes[pid] = "stopped";
-				std::cout << "Process " << pid << " stopped." << std::endl;
+				message = "Process " + std::to_string(pid) + " stopped.\n";
+				std::cout << message;
 			}
 
 		// Start a process again
 		} else if (input.compare("continue") == 0) {
 			int pid;
-			std::cin >> pid;
+			if (LEVEL == 1) {
+		  	std::cin >> pid;
+			} else {
+				pid = std::stoi(rpl);
+			}
+
 			if (sendSignal(pid, SIGCONT)) {
 				processes[pid] = "Running";
-				std::cout << "Process " << pid << " continued." << std::endl;
+				message = "Process " + std::to_string(pid) + " continued.\n";
+				std::cout << message;
 			}
 
 		// Exit the loop and terminate all processes
 		} else if (input.compare("quit") == 0) {
 			break;
 
-		} else {
 		// Print help message
-			std::cout << "Valid Commands:" << std::endl
-								<< "list                print list of active child processes" << std::endl
-								<< "bg COMMAND          executes external command COMMAND in background" << std::endl
-								<< "fg PID              wait for previously running command in the background" << std::endl
-								<< "signal PID SIGNAL   signal process PID the signal SIGNAL" << std::endl
-								<< "stop PID            signal process PID to stop" << std::endl
-								<< "continue PID        signal process PID to continue" << std::endl
-								<< "quit                manually exit" << std::endl
-								<< "help                print help message" << std::endl;
+		} else {
+			message = "Valid Commands:\nlist                print list of active child processes\nbg COMMAND          executes external command COMMAND in background\nfg PID              wait for previously running command in the background\nsignal PID SIGNAL   signal process PID the signal SIGNAL\nstop PID            signal process PID to stop\ncontinue PID        signal process PID to continue\nquit                manually exit\nhelp                print help message\n";
+			std::cout << message;
+		}
+
+		if (LEVEL == 2) {
+			zmq::message_t reply(message.size());
+			memcpy((void *) reply.data(), message.c_str(), message.size());
+			socket.send(reply);
 		}
 	}
 	std::cout << "Exiting..." << std::endl;
+
 	// Terminate all started processes
 	for (std::map<int, std::string>::iterator p = processes.begin(); p != processes.end(); ++p) {
+		// Check if the process is already completed
+		if (p->second == "Terminated" || p->second == "Completed") {
+			continue;
+		}
+
+		// Stop processes if not complete
 		if (!sendSignal(p->first, SIGTERM)) {
 			std::cout << "Error: Failure to terminate process " << p->first << std::endl;
 		} else {
 			std::cout << "DEBUG: Process " << p->first << " terminated" << std::endl;
 		}
 	}
+
+	// Call the functions called by the destructors of the socket/context
+	if (!zmq_close(&socket) || !zmq_term(&context)) {
+		std::cout << "Error: cleanup failed" << std::endl;
+	}
+
 	return EXIT_SUCCESS;
 }
