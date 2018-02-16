@@ -20,8 +20,6 @@
 #include <utility>
 #include <map>
 
-#define MAXBUF 128
-
 int LEVEL = 1;
 std::string PORT = "6500";
 
@@ -51,7 +49,7 @@ int waitProcesses() {
 				std::cout << "Error: Failure waiting for process " << p->first << std::endl;
 				break;
 			} else if (wpid != 0) {  // success in waiting
-				std::cout << "DEBUG: Process " << p->first << " completed" << std::endl;
+				// std::cout << "DEBUG: Process " << p->first << " completed" << std::endl;
 				p->second = "Completed";
 			}
 			return p->first;
@@ -99,6 +97,7 @@ int handleSignal(int pid, std::string sig) {
 		return 1;
 	}
 
+	// Change back to old status in case of error
 	std::string oldStatus;
 	oldStatus = p->second;
 
@@ -130,25 +129,25 @@ int handleSignal(int pid, std::string sig) {
 	} else if (sig == "SIGCONT") {
 		if (p->second == "Running") {
 			message = "Process " + std::to_string(pid) + " already running\n";
-			std::cout << message;
+			// std::cout << message;
 			return 1;
 		}
 		p->second = "Running";
 		signum = SIGCONT;
 	} else {
 		message = "Error: Signal " + sig + " is not supported\n";
-		std::cout << message;
+		// std::cout << message;
 		return 1;  // unsupported signal
 	}
 
 	if (!sendSignal(pid, signum)) {
 		message = "Error: Failure to send signal " + sig + " on process " + std::to_string(pid) + "\n";
-		std::cout << message;
+		// std::cout << message;
 		p->second = oldStatus;
 		return -1;
 	} else {
 		if (p->second.compare("terminated") == 0) {
-			std::cout << "DEBUG: Process " << p->first << " terminated" << std::endl;
+			// std::cout << "DEBUG: Process " << p->first << " terminated" << std::endl;
 			// processes.erase(p);
 		}
 		return 0;
@@ -172,7 +171,7 @@ int exec(std::string command) {
 		std::cout << "Error: Failure to fork" << std::endl;
   } else if (pid > 0) {
 		message = "Process " + std::to_string(pid) + " started in background\n";
-		std::cout << message;
+		// std::cout << message;
 		processes.insert(std::pair<int, std::string>{pid, "Running"});
   } else {
     execvp(args.data()[0], args.data());
@@ -263,7 +262,7 @@ int main(int argc, char *argv[]) {
 					n++;
 				}
 			}
-			std::cout << message;
+			// std::cout << message;
 
 		// Bring process to foreground and wait to complete
 		} else if (input.compare("fg") == 0) {
@@ -281,17 +280,17 @@ int main(int argc, char *argv[]) {
 				continue;
 			} else if (p->second == "Completed") {
 				message = "Process " + std::to_string(pid) + " completed\n";
-				std::cout << message;
+				// std::cout << message;
 				// processes.erase(p);
 				continue;
 			} else if (p->second == "Stopped") {
 				message = "Process " + std::to_string(pid) + " stopped\n";
-				std::cout << message;
+				// std::cout << message;
 				// processes.erase(p);
 				continue;
 			} else if (p->second == "Terminated") {
 				message = "Process " + std::to_string(pid) + " terminated\n";
-				std::cout << message;
+				// std::cout << message;
 				// processes.erase(p);
 				continue;
 			}
@@ -302,7 +301,7 @@ int main(int argc, char *argv[]) {
 				std::cout << "Error: Failure to wait on process " << pid << std::endl;
 				continue;
 			}
-			std::cout << "DEBUG: Process " << pid << " complete" << std::endl;
+			// std::cout << "DEBUG: Process " << pid << " complete" << std::endl;
 
 		// Send signal to a process
 		} else if (input.compare("signal") == 0) {
@@ -329,7 +328,7 @@ int main(int argc, char *argv[]) {
 			if (sendSignal(pid, SIGSTOP)) {
 				processes[pid] = "stopped";
 				message = "Process " + std::to_string(pid) + " stopped.\n";
-				std::cout << message;
+				// std::cout << message;
 			}
 
 		// Start a process again
@@ -344,7 +343,7 @@ int main(int argc, char *argv[]) {
 			if (sendSignal(pid, SIGCONT)) {
 				processes[pid] = "Running";
 				message = "Process " + std::to_string(pid) + " continued.\n";
-				std::cout << message;
+				// std::cout << message;
 			}
 
 		// Exit the loop and terminate all processes
@@ -354,10 +353,12 @@ int main(int argc, char *argv[]) {
 		// Print help message
 		} else {
 			message = "Valid Commands:\nlist                print list of active child processes\nbg COMMAND          executes external command COMMAND in background\nfg PID              wait for previously running command in the background\nsignal PID SIGNAL   signal process PID the signal SIGNAL\nstop PID            signal process PID to stop\ncontinue PID        signal process PID to continue\nquit                manually exit\nhelp                print help message\n";
-			std::cout << message;
+			// std::cout << message;
 		}
 
-		if (LEVEL == 2) {
+		if (LEVEL == 1) {
+			std::cout << message;
+		} else {
 			zmq::message_t reply(message.size());
 			memcpy((void *) reply.data(), message.c_str(), message.size());
 			socket.send(reply);
@@ -376,7 +377,7 @@ int main(int argc, char *argv[]) {
 		if (!sendSignal(p->first, SIGTERM)) {
 			std::cout << "Error: Failure to terminate process " << p->first << std::endl;
 		} else {
-			std::cout << "DEBUG: Process " << p->first << " terminated" << std::endl;
+			// std::cout << "DEBUG: Process " << p->first << " terminated" << std::endl;
 		}
 	}
 
