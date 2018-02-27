@@ -1,6 +1,9 @@
 *grade.txt
 *.DS_Store
 *.o
+*.bmp
 project1/project1
 project2/preproject/irish
 project2/irish
+project3/mandelmovie
+project3/mandel
