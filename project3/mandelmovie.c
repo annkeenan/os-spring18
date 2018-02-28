@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
         // printf("DEBUG: Started process %d.\n", pid);
         execvp(command[0], command);
     		printf("ERROR: Failure starting command for i=%d\n", i+1);
-        exit(EXIT_FAILURE);
+        _exit(EXIT_FAILURE);
 
       // Parent process
       } else {
@@ -106,22 +106,22 @@ void buildCommand(char **cmd, double s, int i) {
 
 // ./mandel -x 0.2910234 -y -0.0164365 -s .00001 -m 1000 -W 700 -H 700
   cmd[0] = strdup("./mandel");
-	cmd[1] = strdup("-x");
-	cmd[2] = strdup("0.2910234");
-	cmd[3] = strdup("-y");
-	cmd[4] = strdup("-0.0164365");
-	cmd[5] = strdup("-s");
-	cmd[6] = strdup(s_str);
-	cmd[7] = strdup("-m");
-	cmd[8] = strdup("4000");
-	cmd[9] = strdup("-W");
-	cmd[10] = strdup("700");
-	cmd[11] = strdup("-H");
-	cmd[12] = strdup("700");
-	cmd[13] = strdup("-o");
-	cmd[14] = strdup(filename);
-  // Number of threads - update for combination
+  cmd[1] = strdup("-x");
+  cmd[2] = strdup("0.2910234");
+  cmd[3] = strdup("-y");
+  cmd[4] = strdup("-0.0164365");
+  cmd[5] = strdup("-s");
+  cmd[6] = strdup(s_str);
+  cmd[7] = strdup("-m");
+  cmd[8] = strdup("4000");
+  cmd[9] = strdup("-W");
+  cmd[10] = strdup("700");
+  cmd[11] = strdup("-H");
+  cmd[12] = strdup("700");
+  cmd[13] = strdup("-o");
+  cmd[14] = strdup(filename);
   cmd[15] = strdup("-n");
   cmd[16] = strdup("1");
-	cmd[17] = NULL;
+  cmd[17] = NULL;
+  cmd[17] = NULL;
 }
