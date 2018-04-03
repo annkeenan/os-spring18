@@ -34,28 +34,24 @@ struct ThreadArgs {
 struct PacketData {  // store in the producer/consumer queue
   char *data;
   size_t length;
+
 };
 
 struct PacketHash {
+  char valid;  // 0 false, 1 true
   uint32 hash;
   char *data;
   size_t length;
 };
 
-struct PacketWindowHash {
-  uint32 hash;
-  char data[WINDOW_SIZE];
-};
-
 std::vector<std::string> files;  // list of files
 std::deque<PacketData> packets;  // producer/consumer queue
-PacketHash packetSet[ARR_SIZE];  // used to check for redundancy
+struct PacketHash packetSet[ARR_SIZE];  // used to check for redundancy
 
 int numPackets = 0;
 int redundancies = 0;
 char DONE = 0;
 char DEBUG = 0;  // 0 disabled, 1 enabled
-char VERBOSE = 0;  // 0 disabled, 1 enabled
 
 void *producer(void *args);
 void *consumer(void *args);
@@ -106,8 +102,6 @@ int main(int argc, char *argv[]) {
     // Set print modes
     } else if (strcmp(argv[i], "-debug") == 0) {
       DEBUG = 1;
-    } else if (strcmp(argv[i], "-v") == 0) {
-      VERBOSE = 1;
     // Check to make sure no other illegal arguments
     } else if (strncmp(argv[i], "-", 1) == 0) {
         printf("ERROR: Illegal argument %s.\n", argv[i]);
@@ -169,7 +163,7 @@ int main(int argc, char *argv[]) {
 
   // Print statistics
   printf("Hits:         %d\n", redundancies);
-  printf("Savings:      %d\n", (float)redundancies/(float)numPackets);
+  printf("Savings:      %f\n", (float)redundancies/(float)numPackets);
   printf("Elapsed time: %f\n", elapsedTime);
 
   return 0;
@@ -199,7 +193,7 @@ void *producer(void *args) {
     rval = fread(&magicNum, 4, 1, fp);
     if (rval != 4) {
       // printf("ERROR: Unable to read the magic number.\n");
-    } else if (DEBUG || VERBOSE) {
+    } else if (DEBUG) {
       printf("Magic number %X.\n", magicNum);
     }
     fseek(fp, 24, SEEK_CUR);  // skip over the rest of the global header
@@ -230,19 +224,16 @@ void *producer(void *args) {
         } else {
           numPackets++;
 
-          // Create a new char array to store
-          char data[pLength-52];
-          memcpy(data, &pData[52], pLength-52);
-          PacketData packet;
-          packet.data = data;
-          packet.length = pLength-52;
+          // Create new string
+          char buf[pLength-51];
+          memcpy(buf, &pData[52], sizeof(buf));
 
           // Add packet to global array
           pthread_mutex_lock(&dequeMutex);
           if (DEBUG) {
             printf("Producer thread %d acquired deque lock.\n", tArgs->id);
           }
-          packets.push_back(packet);
+          packets.push_back({buf, pLength-51});
           pthread_cond_signal(&packetCond);
           pthread_mutex_unlock(&dequeMutex);
           if (DEBUG) {
@@ -260,7 +251,6 @@ void *producer(void *args) {
 void *consumer(void *args) {
   ThreadArgs *tArgs = (ThreadArgs *) args;
   SpookyHash sHash;
-  uint32 hash;
 
   // Loop until files are all read
   while (1) {
@@ -302,7 +292,7 @@ void *consumer(void *args) {
 
     if (tArgs->level == 1) {
       // Calculate the hash of the packet
-      hash = sHash.Hash32(packet, sizeof(packet), 0);
+      uint32 hash = sHash.Hash32(packet, sizeof(packet), 0);
 
       // Check for redundancy
       int index = hash % ARR_SIZE;
@@ -310,11 +300,18 @@ void *consumer(void *args) {
       if (DEBUG) {
         printf("Consumer thread %d acquired set lock.\n", tArgs->id);
       }
-      if (packetSet[index].hash == hash) {  // hash matches
+      // printf("%c\n", packetSet[index].valid);
+      if (packetSet[index].valid && packetSet[index].hash == hash) {  // hash matches
         if (memcmp(packet, packetSet[index].data, packetSet[index].length) == 0) {
-          if (DEBUG || VERBOSE) {
+          if (DEBUG) {
             printf("Redundancy found. Hash: %llu.\n", (long long) hash);
           }
+
+          pthread_mutex_unlock(&setMutex);
+          if (DEBUG) {
+            printf("Consumer thread %d released set lock.\n", tArgs->id);
+          }
+
           pthread_mutex_lock(&counterMutex);
           if (DEBUG) {
             printf("Consumer thread %d acquired counter lock.\n", tArgs->id);
@@ -331,22 +328,28 @@ void *consumer(void *args) {
             packetSet[index].data = packet;
             packetSet[index].length = sizeof(packet);
           }
+          pthread_mutex_unlock(&setMutex);
+          if (DEBUG) {
+            printf("Consumer thread %d released set lock.\n", tArgs->id);
+          }
         }
       } else {  // no redundancy
+        packetSet[index].valid = 1;
         packetSet[index].hash = hash;
         packetSet[index].data = packet;
         packetSet[index].length = sizeof(packet);
-      }
-      pthread_mutex_unlock(&setMutex);
-      if (DEBUG) {
-        printf("Consumer thread %d released set lock.\n", tArgs->id);
+
+        pthread_mutex_unlock(&setMutex);
+        if (DEBUG) {
+          printf("Consumer thread %d released set lock.\n", tArgs->id);
+        }
       }
     } else {
       for (size_t i = 0; i < sizeof(packet)-WINDOW_SIZE; i++) {
         char buf[WINDOW_SIZE];
         memcpy(buf, &packet[i], WINDOW_SIZE);
         // Calculate the hash of the packet window
-        hash = sHash.Hash32(buf, sizeof(buf), 0);
+        uint32 hash = sHash.Hash32(buf, sizeof(buf), 0);
 
         // Check for redundancy
         int index = hash % ARR_SIZE;
@@ -354,11 +357,16 @@ void *consumer(void *args) {
         if (DEBUG) {
           printf("Consumer thread %d acquired set lock.\n", tArgs->id);
         }
-        if (packetSet[index].hash == hash) {  // hash matches
+        if (packetSet[index].valid && packetSet[index].hash == hash) {  // hash matches
           if (memcmp(packet, packetSet[index].data, packetSet[index].length) == 0) {
-            if (DEBUG || VERBOSE) {
+            if (DEBUG) {
               printf("Redundancy found. Hash: %llu.\n", (long long) hash);
             }
+            pthread_mutex_unlock(&setMutex);
+            if (DEBUG) {
+              printf("Consumer thread %d released set lock.\n", tArgs->id);
+            }
+
             pthread_mutex_lock(&counterMutex);
             if (DEBUG) {
               printf("Consumer thread %d acquired counter lock.\n", tArgs->id);
@@ -372,18 +380,25 @@ void *consumer(void *args) {
             // Randomly determine if the space should be replaced
             if (rand() % 2) {
               packetSet[index].hash = hash;
-              packetSet[index].data = packet;
+              memcpy(packetSet[index].data, buf, sizeof(buf));
               packetSet[index].length = sizeof(packet);
+            }
+
+            pthread_mutex_unlock(&setMutex);
+            if (DEBUG) {
+              printf("Consumer thread %d released set lock.\n", tArgs->id);
             }
           }
         } else {  // no redundancy
+          packetSet[index].valid = 1;
           packetSet[index].hash = hash;
-          packetSet[index].data = packet;
+          memcpy(packetSet[index].data, buf, sizeof(buf));
           packetSet[index].length = sizeof(packet);
-        }
-        pthread_mutex_unlock(&setMutex);
-        if (DEBUG) {
-          printf("Consumer thread %d released set lock.\n", tArgs->id);
+
+          pthread_mutex_unlock(&setMutex);
+          if (DEBUG) {
+            printf("Consumer thread %d released set lock.\n", tArgs->id);
+          }
         }
       }
     }
