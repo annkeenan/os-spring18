@@ -36,9 +36,9 @@ Level | Threads | Command | Processed | Hits | Savings | Elapsed Time
 --- | --- | --- | --- | --- | --- | ---
 1 | 2 | ./threadedRE Dataset-Small.pcap | 3.87 MB | 0 | 0.00% | 0.15s
 1 | 2 | ./threadedRE Dataset-Small.pcap Dataset-Small.pcap | 7.74 MB | 10447 | 30.82% | 0.28s
-1 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73MB | 729 | 2.50% | 0.47s
+1 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73 MB | 729 | 2.50% | 0.47s
 1 | 2 | ./threadedRE Dataset-Medium.pcap Dataset-Medium.pcap | 69.46MB | 18137 | 25.79% | 0.97s
 2 | 2 | ./threadedRE Dataset-Small.pcap | 3.87 MB | 11342 | 18.92% | 1.02s
-2 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73MB | 3179 | 0.59% | 18.10s
-2 | 2 | ./threadedRE Dataset-Small.pcap Dataset-Small.pcap | 7.74MB | 22721 | 18.95% | 2.06s
-2 | 2 | ./threadedRE Dataset-Medium.pcap Dataset-Medium.pcap | 69.46MB | 6413 | 0.60% | 36.06s
+2 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73 MB | 3179 | 0.59% | 18.10s
+2 | 2 | ./threadedRE Dataset-Small.pcap Dataset-Small.pcap | 7.74 MB | 22721 | 18.95% | 2.06s
+2 | 2 | ./threadedRE Dataset-Medium.pcap Dataset-Medium.pcap | 69.46 MB | 6413 | 0.60% | 36.06s
