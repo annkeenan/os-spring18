@@ -32,7 +32,8 @@ PacketHash struct has a size of 1+32+2400+4 = 2437 bytes. An array of size
 
 The program ran best with 2 threads, one consumer, and one producer, with a
 throughput of 73000 KB/s on average running level 1 and an average of 2000 KB/s
-on level 2. Running more than 2 threads is not recommended.
+on level 2. Running more than 2 threads is not recommended as the hash algorithm
+runs quick enough to cause threads to block one another.
 
 ## Performance
 
@@ -42,7 +43,6 @@ Level | Threads | Command | Processed | Hits | Savings | Elapsed Time
 1 | 2 | ./threadedRE Dataset-Small.pcap Dataset-Small.pcap | 7.74 MB | 10447 | 30.82% | 0.28s
 1 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73 MB | 729 | 2.50% | 0.47s
 1 | 2 | ./threadedRE Dataset-Medium.pcap Dataset-Medium.pcap | 69.46 MB | 18137 | 25.79% | 0.86s
-
 2 | 2 | ./threadedRE Dataset-Small.pcap | 3.87 MB | 16201 | 44.05% | 1.04s
 2 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73 MB | 71424 | 13.43% | 16.71s
 2 | 2 | ./threadedRE Dataset-Small.pcap Dataset-Small.pcap | 7.74 MB | 32203 | 44.02 | 1.99s
