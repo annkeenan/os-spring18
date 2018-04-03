@@ -33,7 +33,7 @@ PacketHash struct has a size of 1+32+2400+4 = 2437 bytes. An array of size
 ## Performance
 
 Level | Threads | Command | Processed | Hits | Savings | Elapsed Time
---- | --- | --- | --- | --- | ---
+--- | --- | --- | --- | --- | --- | ---
 1 | 2 | ./threadedRE Dataset-Small.pcap | 3.87 MB | 0 | 0.00% | 0.15s
 1 | 2 | ./threadedRE Dataset-Small.pcap Dataset-Small.pcap | 7.74 MB | 10447 | 30.82% | 0.28s
 1 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73MB | 729 | 2.50% | 0.47s
