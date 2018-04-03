@@ -315,7 +315,7 @@ void *consumer(void *args) {
       }
       // If the hash matches a previous hash and data matches the previous data
       if (packetSet[index].valid && packetSet[index].hash == hash &&
-        memcmp(packet, packetSet[index].data, packetSet[index].length) == 0) {
+        memcmp(packet, packetSet[index].data, packetLen) == 0) {
         if (DEBUG) {
           printf("Redundancy found. Hash: %llu.\n", (long long) hash);
         }
@@ -345,10 +345,6 @@ void *consumer(void *args) {
             memcpy(packetSet[index].data, packet, packetLen);
             packetSet[index].length = packetLen;
           }
-          pthread_mutex_unlock(&setMutex);
-          if (DEBUG) {
-            printf("Consumer thread %d released set lock.\n", tArgs->id);
-          }
         // If new hash, store in the array
         } else {
           packetSet[index].valid = 1;
@@ -377,7 +373,7 @@ void *consumer(void *args) {
           printf("Consumer thread %d acquired set lock.\n", tArgs->id);
         }
         if (packetSet[index].valid && packetSet[index].hash == hash &&
-          memcmp(packet, packetSet[index].data, packetSet[index].length) == 0) {
+          memcmp(buf, packetSet[index].data, WINDOW_SIZE) == 0) {
           if (DEBUG) {
             printf("Redundancy found at index pos %d. Hash: %llu.\n", index, (long long) hash);
           }
@@ -395,15 +391,15 @@ void *consumer(void *args) {
           if (packetSet[index].valid) {
             if (rand() % 2) {
               packetSet[index].hash = hash;
-              memcpy(packetSet[index].data, buf, sizeof(buf));
-              packetSet[index].length = sizeof(buf);
+              memcpy(packetSet[index].data, buf, WINDOW_SIZE);
+              packetSet[index].length = WINDOW_SIZE;
             }
           // If new hash, store in the array
           } else {
             packetSet[index].valid = 1;
             packetSet[index].hash = hash;
-            memcpy(packetSet[index].data, buf, sizeof(buf));
-            packetSet[index].length = sizeof(buf);
+            memcpy(packetSet[index].data, buf, WINDOW_SIZE);
+            packetSet[index].length = WINDOW_SIZE;
           }
           // Release set lock before waiting for counter lock
           pthread_mutex_unlock(&setMutex);

@@ -30,6 +30,10 @@ modulus operation, but in order to preserve space, it was necessary. Each
 PacketHash struct has a size of 1+32+2400+4 = 2437 bytes. An array of size
 26,000 would therefore take up just under 64MB.
 
+The program ran best with 2 threads, one consumer, and one producer, with a
+throughput of 73000 KB/s on average running level 1 and an average of 2000 KB/s
+on level 2. Running more than 2 threads is not recommended.
+
 ## Performance
 
 Level | Threads | Command | Processed | Hits | Savings | Elapsed Time
@@ -37,8 +41,9 @@ Level | Threads | Command | Processed | Hits | Savings | Elapsed Time
 1 | 2 | ./threadedRE Dataset-Small.pcap | 3.87 MB | 0 | 0.00% | 0.15s
 1 | 2 | ./threadedRE Dataset-Small.pcap Dataset-Small.pcap | 7.74 MB | 10447 | 30.82% | 0.28s
 1 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73 MB | 729 | 2.50% | 0.47s
-1 | 2 | ./threadedRE Dataset-Medium.pcap Dataset-Medium.pcap | 69.46MB | 18137 | 25.79% | 0.97s
-2 | 2 | ./threadedRE Dataset-Small.pcap | 3.87 MB | 11342 | 18.92% | 1.02s
-2 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73 MB | 3179 | 0.59% | 18.10s
-2 | 2 | ./threadedRE Dataset-Small.pcap Dataset-Small.pcap | 7.74 MB | 22721 | 18.95% | 2.06s
-2 | 2 | ./threadedRE Dataset-Medium.pcap Dataset-Medium.pcap | 69.46 MB | 6413 | 0.60% | 36.06s
+1 | 2 | ./threadedRE Dataset-Medium.pcap Dataset-Medium.pcap | 69.46 MB | 18137 | 25.79% | 0.86s
+
+2 | 2 | ./threadedRE Dataset-Small.pcap | 3.87 MB | 16201 | 44.05% | 1.04s
+2 | 2 | ./threadedRE Dataset-Medium.pcap | 34.73 MB | 71424 | 13.43% | 16.71s
+2 | 2 | ./threadedRE Dataset-Small.pcap Dataset-Small.pcap | 7.74 MB | 32203 | 44.02 | 1.99s
+2 | 2 | ./threadedRE Dataset-Medium.pcap Dataset-Medium.pcap | 69.46 MB | 142892 | 13.43% | 31.52s
