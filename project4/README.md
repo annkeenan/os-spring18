@@ -27,20 +27,30 @@ encountering a collision, but this was a risk taken in order to preserve the
 amount of space used for the array and performance with a O(1) lookup time.
 Additionally, the effectiveness of the hash function was limited by the
 modulus operation, but in order to preserve space, it was necessary. Each
-PacketHash struct has a size of up to 1+32+2400+4 = 2437 bytes. An array of size
-30,000 would therefore take up just over 64MB of space should each char array
-be 2400 bytes in length.
+PacketHash struct has a size of 1+32+2400+4 = 2437 bytes. An array of size
+26,000 would therefore take up just under 64MB.
 
 ## Performance
 
+./threadedRE Dataset-Small.pcap
+Level 1, Number of threads 2.
+Hits:         0
+Savings:      0.000000
+Elapsed time: 0.150000
+
 ./threadedRE Dataset-Small.pcap Dataset-Small.pcap
 Level 1, Number of threads 2.
-Hits:         12782
-Savings:      0.461811
-Elapsed time: 0.130000
+Hits:         8806
+Savings:      0.318159
+Elapsed time: 0.280000
 
 ./threadedRE Dataset-Medium.pcap
 Level 1, Number of threads 2.
-Hits:         5591
-Savings:      0.162190
-Elapsed time: 0.250000
+Hits:         879
+Savings:      0.025499
+Elapsed time: 0.490000
+
+Level 1, Number of threads 2.
+Hits:         12496
+Savings:      0.181249
+Elapsed time: 0.980000

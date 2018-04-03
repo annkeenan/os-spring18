@@ -19,11 +19,11 @@
 #define MIN_PACKET 128
 #define MAX_PACKET 2400
 #define ARR_SIZE 30000
-#define WINDOW_SIZE 20
+#define WINDOW_SIZE 64
 
 pthread_mutex_t dequeMutex = PTHREAD_MUTEX_INITIALIZER;  // packets object
 pthread_mutex_t setMutex = PTHREAD_MUTEX_INITIALIZER;  // packetSet object
-pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER;  // counter for # of redundancies found
+pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER;  // counter for hits/redundancies found
 pthread_cond_t packetCond = PTHREAD_COND_INITIALIZER;  // packets object
 
 struct ThreadArgs {
@@ -32,24 +32,26 @@ struct ThreadArgs {
 };
 
 struct PacketData {  // store in the producer/consumer queue
-  char *data;
+  char data[MAX_PACKET];
   size_t length;
-
 };
 
 struct PacketHash {
   char valid;  // 0 false, 1 true
   uint32 hash;
-  char *data;
+  char data[MAX_PACKET];
   size_t length;
+  PacketHash() : valid(0) {}
 };
 
 std::vector<std::string> files;  // list of files
 std::deque<PacketData> packets;  // producer/consumer queue
 struct PacketHash packetSet[ARR_SIZE];  // used to check for redundancy
 
-int numPackets = 0;
-int redundancies = 0;
+int numPackets = 0;  // track total number of packets processed
+int redundancy = 0;  // track bytes of redundancy
+int hits = 0;  // level 1 = number of repeat packets, level 2 = number of repeat strings
+int dataProcessed = 0;  // track total number of bytes in packets
 char DONE = 0;
 char DEBUG = 0;  // 0 disabled, 1 enabled
 
@@ -162,9 +164,10 @@ int main(int argc, char *argv[]) {
   double elapsedTime = double(end - begin) / CLOCKS_PER_SEC;
 
   // Print statistics
-  printf("Hits:         %d\n", redundancies);
-  printf("Savings:      %f\n", (float)redundancies/(float)numPackets);
-  printf("Elapsed time: %f\n", elapsedTime);
+  printf("%.2f MB processed\n", dataProcessed*1e-6);
+  printf("%d hits\n", hits);
+  printf("%.2f%% redundancy detected\n", (float)redundancy/(float)dataProcessed * 100);
+  printf("%.2fs time elapsed\n", elapsedTime);
 
   return 0;
 }
@@ -223,25 +226,33 @@ void *producer(void *args) {
           printf("ERROR: Did not read full packet. Return value %zu.\n", rval);
         } else {
           numPackets++;
+          dataProcessed += pLength;
 
-          // Create new string
-          char buf[pLength-51];
-          memcpy(buf, &pData[52], sizeof(buf));
+          // Create new object to push into queue
+          PacketData packetData;
+          memcpy(packetData.data, &pData[52], pLength-51);
+          packetData.length = pLength-51;
 
           // Add packet to global array
           pthread_mutex_lock(&dequeMutex);
           if (DEBUG) {
             printf("Producer thread %d acquired deque lock.\n", tArgs->id);
           }
-          packets.push_back({buf, pLength-51});
-          pthread_cond_signal(&packetCond);
+          packets.push_back(packetData);
           pthread_mutex_unlock(&dequeMutex);
           if (DEBUG) {
             printf("Producer thread %d released deque lock.\n", tArgs->id);
           }
+
+          // Send signal to the consumer that a new object has been added to the queue
+          pthread_cond_signal(&packetCond);
+          if (DEBUG) {
+            printf("Producer thread %d signaled consumer thread.\n", tArgs->id);
+          }
         }
       }
     }
+    fclose(fp);
   }
   DONE = true;
   return NULL;
@@ -282,7 +293,8 @@ void *consumer(void *args) {
     // Use the packet at the front of the deque
     // Create a new char array to store the packet data
     char packet[packets.front().length];
-    memcpy(packet, packets.front().data, packets.front().length);
+    int packetLen = packets.front().length;
+    memcpy(packet, packets.front().data, packetLen);
     // Remove the packet at the front of the deque
     packets.pop_front();
     pthread_mutex_unlock(&dequeMutex);
@@ -290,6 +302,7 @@ void *consumer(void *args) {
       printf("Consumer thread %d released deque lock.\n", tArgs->id);
     }
 
+    // Level 1
     if (tArgs->level == 1) {
       // Calculate the hash of the packet
       uint32 hash = sHash.Hash32(packet, sizeof(packet), 0);
@@ -300,51 +313,57 @@ void *consumer(void *args) {
       if (DEBUG) {
         printf("Consumer thread %d acquired set lock.\n", tArgs->id);
       }
-      // printf("%c\n", packetSet[index].valid);
-      if (packetSet[index].valid && packetSet[index].hash == hash) {  // hash matches
-        if (memcmp(packet, packetSet[index].data, packetSet[index].length) == 0) {
-          if (DEBUG) {
-            printf("Redundancy found. Hash: %llu.\n", (long long) hash);
-          }
+      // If the hash matches a previous hash and data matches the previous data
+      if (packetSet[index].valid && packetSet[index].hash == hash &&
+        memcmp(packet, packetSet[index].data, packetSet[index].length) == 0) {
+        if (DEBUG) {
+          printf("Redundancy found. Hash: %llu.\n", (long long) hash);
+        }
 
-          pthread_mutex_unlock(&setMutex);
-          if (DEBUG) {
-            printf("Consumer thread %d released set lock.\n", tArgs->id);
-          }
+        // Release set lock before waiting for counter lock
+        pthread_mutex_unlock(&setMutex);
+        if (DEBUG) {
+          printf("Consumer thread %d released set lock.\n", tArgs->id);
+        }
 
-          pthread_mutex_lock(&counterMutex);
-          if (DEBUG) {
-            printf("Consumer thread %d acquired counter lock.\n", tArgs->id);
-          }
-          redundancies++;
-          pthread_mutex_unlock(&counterMutex);
-          if (DEBUG) {
-            printf("Consumer thread %d released counter lock.\n", tArgs->id);
-          }
-        } else {  // collision
-          // Randomly determine if the space should be replaced
+        // Increment the counter for the number of hits
+        pthread_mutex_lock(&counterMutex);
+        if (DEBUG) {
+          printf("Consumer thread %d acquired counter lock.\n", tArgs->id);
+        }
+        hits++;
+        redundancy+= packetSet[index].length;
+        pthread_mutex_unlock(&counterMutex);
+        if (DEBUG) {
+          printf("Consumer thread %d released counter lock.\n", tArgs->id);
+        }
+      } else {
+        // If collision, randomly determine if the space should be replaced
+        if (packetSet[index].valid) {
           if (rand() % 2) {
             packetSet[index].hash = hash;
-            packetSet[index].data = packet;
-            packetSet[index].length = sizeof(packet);
+            memcpy(packetSet[index].data, packet, packetLen);
+            packetSet[index].length = packetLen;
           }
           pthread_mutex_unlock(&setMutex);
           if (DEBUG) {
             printf("Consumer thread %d released set lock.\n", tArgs->id);
           }
+        // If new hash, store in the array
+        } else {
+          packetSet[index].valid = 1;
+          packetSet[index].hash = hash;
+          memcpy(packetSet[index].data, packet, packetLen);
+          packetSet[index].length = packetLen;
         }
-      } else {  // no redundancy
-        packetSet[index].valid = 1;
-        packetSet[index].hash = hash;
-        packetSet[index].data = packet;
-        packetSet[index].length = sizeof(packet);
-
         pthread_mutex_unlock(&setMutex);
         if (DEBUG) {
           printf("Consumer thread %d released set lock.\n", tArgs->id);
         }
       }
+    // Level 2
     } else {
+      int match = -1;  // track the starting position of a matching string
       for (size_t i = 0; i < sizeof(packet)-WINDOW_SIZE; i++) {
         char buf[WINDOW_SIZE];
         memcpy(buf, &packet[i], WINDOW_SIZE);
@@ -357,47 +376,57 @@ void *consumer(void *args) {
         if (DEBUG) {
           printf("Consumer thread %d acquired set lock.\n", tArgs->id);
         }
-        if (packetSet[index].valid && packetSet[index].hash == hash) {  // hash matches
-          if (memcmp(packet, packetSet[index].data, packetSet[index].length) == 0) {
-            if (DEBUG) {
-              printf("Redundancy found. Hash: %llu.\n", (long long) hash);
+        if (packetSet[index].valid && packetSet[index].hash == hash &&
+          memcmp(packet, packetSet[index].data, packetSet[index].length) == 0) {
+          if (DEBUG) {
+            printf("Redundancy found at index pos %d. Hash: %llu.\n", index, (long long) hash);
+          }
+          // If not currently tracking a redundancy, set to the current index position
+          if (match == -1) {
+            match = i;
+          }
+          // Release set lock before waiting for counter lock
+          pthread_mutex_unlock(&setMutex);
+          if (DEBUG) {
+            printf("Consumer thread %d released set lock.\n", tArgs->id);
+          }
+        } else {
+          // If collision, randomly determine if the space should be replaced
+          if (packetSet[index].valid) {
+            if (rand() % 2) {
+              packetSet[index].hash = hash;
+              memcpy(packetSet[index].data, buf, sizeof(buf));
+              packetSet[index].length = sizeof(buf);
             }
-            pthread_mutex_unlock(&setMutex);
-            if (DEBUG) {
-              printf("Consumer thread %d released set lock.\n", tArgs->id);
-            }
+          // If new hash, store in the array
+          } else {
+            packetSet[index].valid = 1;
+            packetSet[index].hash = hash;
+            memcpy(packetSet[index].data, buf, sizeof(buf));
+            packetSet[index].length = sizeof(buf);
+          }
+          // Release set lock before waiting for counter lock
+          pthread_mutex_unlock(&setMutex);
+          if (DEBUG) {
+            printf("Consumer thread %d released set lock.\n", tArgs->id);
+          }
 
+          // If a match was found before, add the redundancy
+          if (match != -1) {
             pthread_mutex_lock(&counterMutex);
             if (DEBUG) {
               printf("Consumer thread %d acquired counter lock.\n", tArgs->id);
             }
-            redundancies++;
+            // Add the bytes from the first to last matched place
+            redundancy += (i + WINDOW_SIZE - 1) - match;
+            // Add a hit
+            hits += 1;
             pthread_mutex_unlock(&counterMutex);
             if (DEBUG) {
               printf("Consumer thread %d released counter lock.\n", tArgs->id);
             }
-          } else {  // collision
-            // Randomly determine if the space should be replaced
-            if (rand() % 2) {
-              packetSet[index].hash = hash;
-              memcpy(packetSet[index].data, buf, sizeof(buf));
-              packetSet[index].length = sizeof(packet);
-            }
-
-            pthread_mutex_unlock(&setMutex);
-            if (DEBUG) {
-              printf("Consumer thread %d released set lock.\n", tArgs->id);
-            }
-          }
-        } else {  // no redundancy
-          packetSet[index].valid = 1;
-          packetSet[index].hash = hash;
-          memcpy(packetSet[index].data, buf, sizeof(buf));
-          packetSet[index].length = sizeof(packet);
-
-          pthread_mutex_unlock(&setMutex);
-          if (DEBUG) {
-            printf("Consumer thread %d released set lock.\n", tArgs->id);
+            match = -1; // reset the tracker
+            i += WINDOW_SIZE;  // move the iterator past the matched string
           }
         }
       }
