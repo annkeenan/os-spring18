@@ -1,0 +1,24 @@
+level 1 correctness: 
+
+properly processing multiple files > 64MB: program won't finish after 45 minutes (running pcap Big and pcap Medium with optimal number of threads). [-7.5]
+
+level 2 correctness:
+
+works on most files, some inaccurate results: for two medium files at level 2, the redundency rates is detected to be around 14%, which is too far away from 50%. On the other hand two small files get 44% which is about right. This indicates ineffective eviction strategy in the level 2 design. [-2.5]
+
+overall correctness: 
+30/40
+
+Robustness: 
+16/18
+When file is in the wrong format or does not exist, the program won't exit even though it detects the wrong file situations. [-2]
+
+documentation:
+12/12
+performance for level1 and 2 should be expressed in KB/s format. [-2]
+
+
+
+competitive grade: 2.5
+overall: 80.5
+
