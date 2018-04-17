@@ -57,7 +57,7 @@ int main( int argc, char *argv[] )
 	srand(time(NULL));
 
 	if(argc!=5) {
-		printf("use: virtmem <npages> <nframes> <rand|fifo|custom> <sort|scan|focus>\n");
+		printf("Usage: ./virtmem <npages> <nframes> <rand|fifo|custom> <sort|scan|focus>\n");
 		return 1;
 	}
 
@@ -65,8 +65,11 @@ int main( int argc, char *argv[] )
 	npages = atoi(argv[1]);
 	nframes = atoi(argv[2]);
 	if(!npages || !nframes) {
-		printf("error: invalid number of pages or frames\n");
+		fprintf(stderr, "Error: Invalid number of pages or frames\n");
 		exit(1);
+	} else if (npages < nframes) {
+		fprintf(stderr, "Error: More frames (%d) than pages (%d). Defaulting to %d frames\n", nframes, npages, npages);
+		nframes = npages;
 	}
 	const char *algorithm = argv[3];
 	const char *program = argv[4];
@@ -74,7 +77,7 @@ int main( int argc, char *argv[] )
 	// create disk
 	disk = disk_open("myvirtualdisk", npages);
 	if(!disk) {
-		fprintf(stderr, "couldn't create virtual disk: %s\n", strerror(errno));
+		fprintf(stderr, "Error: Couldn't create virtual disk: %s\n", strerror(errno));
 		exit(1);
 	}
 
@@ -87,11 +90,11 @@ int main( int argc, char *argv[] )
 	} else if(strcmp(algorithm, "custom") == 0) { // lru algorithm
 		pt = page_table_create( npages, nframes, lru_fault_handler );
 	} else {
-		fprintf(stderr, "unsupported algorithm: %s. defaulting to rand\n", algorithm);
+		fprintf(stderr, "Error: Unsupported algorithm: %s. Defaulting to rand\n", algorithm);
 		pt = page_table_create( npages, nframes, rand_fault_handler );
 	}
 	if(!pt) {
-		fprintf(stderr, "couldn't create page table: %s\n", strerror(errno));
+		fprintf(stderr, "Error: Couldn't create page table: %s\n", strerror(errno));
 		return 1;
 	}
 
@@ -116,7 +119,7 @@ int main( int argc, char *argv[] )
 	} else if(strcmp(program, "focus") == 0) {
 		focus_program(virtmem, npages*PAGE_SIZE);
 	} else {
-		fprintf(stderr, "unknown program: %s\n", argv[3]);
+		fprintf(stderr, "Error: unknown program: %s\n", argv[3]);
 		return 1;
 	}
 
@@ -158,13 +161,15 @@ void rand_fault_handler( struct page_table *pt, int page )
 	} else if(bits & PROT_READ) {
 		bits = PROT_READ | PROT_WRITE;
 	} else {
-		printf("access fault on page #%d\n", page);
+		fprintf(stderr, "Error: Access fault on page #%d\n", page);
 		exit(1);
 	}
 
+	// add the new page to the frame table// add the new page to the frame table
 	page_table_set_entry(pt, page, frame, bits);
 	frameTable[frame].page = page;
 	frameTable[frame].bits = bits;
+
 	pageFaults++;
 	// print_table();
 }
@@ -196,14 +201,18 @@ void fifo_fault_handler( struct page_table *pt, int page )
 	} else if(bits & PROT_READ) {
 		bits = PROT_READ | PROT_WRITE;
 	} else {
-		printf("access fault on page #%d\n", page);
+		fprintf(stderr, "Error: Access fault on page #%d\n", page);
 		exit(1);
 	}
 
+	// add the new page to the frame table
 	page_table_set_entry(pt, page, frame, bits);
 	frameTable[frame].page = page;
 	frameTable[frame].bits = bits;
+
 	pageFaults++;
+
+	// move the frame pointer for the next access
 	currFrame = (currFrame + 1) % nframes;
 	// print_table();
 }
@@ -239,10 +248,11 @@ void lru_fault_handler( struct page_table *pt, int page )
 		bits = PROT_READ | PROT_WRITE;
 	// no write
 	} else {
-		printf("access fault on page #%d\n", page);
+		fprintf(stderr, "Error: Access fault on page #%d\n", page);
 		exit(1);
 	}
 
+	// add the new page to the frame table
 	page_table_set_entry(pt, page, frame, bits);
 	frameTable[frame].page = page;
 	frameTable[frame].bits = bits;
@@ -269,13 +279,14 @@ int find_empty( struct page_table *pt )
 	return -1;
 }
 
+// remove the page from the frame table
 void remove_page( struct page_table *pt, int frame )
 {
-	// remove the page from the frame table
 	if(frameTable[frame].bits & PROT_WRITE) {
 		disk_write(disk, frameTable[frame].page, &physmem[frame*PAGE_SIZE]);
 		diskWrites++;
 	}
+	// clean the bits
 	page_table_set_entry(pt, frameTable[frame].page, frame, 0);
 	frameTable[frame].bits = 0;
 }

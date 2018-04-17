@@ -12,4 +12,4 @@ virtmem: $(OBJECTS)
 
 .PHONY: clean
 clean:
-	rm -f *.o virtmem
+	rm -f *.o virtmem myvirtualdisk
