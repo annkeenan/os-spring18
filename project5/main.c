@@ -130,7 +130,7 @@ int main( int argc, char *argv[] )
 	free(frameTable);
 	free(frameArr);
 
-	fprintf(stdout, "disk reads (%d), writes (%d), page faults (%d)\n", diskReads, diskWrites, pageFaults);
+	fprintf(stdout, "disk reads (%d), disk writes (%d), page faults (%d)\n", diskReads, diskWrites, pageFaults);
 
 	return 0;
 }
