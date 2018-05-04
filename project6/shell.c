@@ -12,7 +12,6 @@ static int do_copyout( int inumber, const char *filename );
 
 int main( int argc, char *argv[] )
 {
-	isMounted = 0;
 	char line[1024];
 	char cmd[1024];
 	char arg1[1024];

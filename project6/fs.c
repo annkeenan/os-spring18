@@ -198,7 +198,7 @@ int fs_mount()
     }
   }
 
-  IS_MOUNTED = 1; //we are now mounted! update that
+  IS_MOUNTED = 1;
   return 1;
 }
 
